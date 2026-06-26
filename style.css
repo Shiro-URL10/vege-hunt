@@ -1,0 +1,152 @@
+:root {
+  color-scheme: light;
+  --soil: #7a4a2a;
+  --soil-dark: #4b2d1e;
+  --leaf: #2f8a42;
+  --cream: #fff8e8;
+  --ink: #263126;
+  --panel: rgba(255, 248, 232, 0.9);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, #86cdee 0 37%, #77b85a 37% 100%);
+  color: var(--ink);
+  font-family:
+    ui-rounded,
+    "Hiragino Maru Gothic ProN",
+    "Yu Gothic",
+    system-ui,
+    sans-serif;
+}
+
+.game-shell {
+  width: min(100vw, 980px);
+  height: min(100vh, 760px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
+}
+
+.hud {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 760px);
+  justify-self: center;
+  padding: 8px;
+  border: 3px solid var(--soil-dark);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 0 rgba(75, 45, 30, 0.2);
+}
+
+.hud div {
+  min-width: 0;
+}
+
+.hud p {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.hud .label {
+  margin-bottom: 2px;
+  color: #5b6841;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+button {
+  min-width: 46px;
+  height: 46px;
+  border: 3px solid var(--soil-dark);
+  border-radius: 8px;
+  background: #ffd36a;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: inset 0 -4px 0 rgba(75, 45, 30, 0.22);
+  touch-action: manipulation;
+}
+
+button:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 -2px 0 rgba(75, 45, 30, 0.22);
+}
+
+#restart,
+#sound {
+  width: 46px;
+  padding: 0;
+  font-size: 24px;
+}
+
+#game {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 4px solid var(--soil-dark);
+  border-radius: 8px;
+  background: var(--soil);
+  box-shadow: 0 12px 0 rgba(75, 45, 30, 0.25);
+  image-rendering: pixelated;
+}
+
+.controls {
+  display: none;
+  justify-self: center;
+  gap: 6px;
+  justify-items: center;
+}
+
+.controls div {
+  display: flex;
+  gap: 6px;
+}
+
+#dig {
+  width: 82px;
+  background: #f47f4d;
+}
+
+@media (max-width: 720px), (pointer: coarse) {
+  body {
+    overflow: auto;
+  }
+
+  .game-shell {
+    min-height: 100vh;
+    height: auto;
+    grid-template-rows: auto auto auto;
+    align-content: start;
+  }
+
+  #game {
+    aspect-ratio: 3 / 2;
+    height: auto;
+  }
+
+  .controls {
+    display: grid;
+  }
+}
