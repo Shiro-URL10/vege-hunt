@@ -192,6 +192,18 @@ function resetGame() {
   updateHud();
 }
 
+function returnToTitle() {
+  keys.clear();
+  digHeld = false;
+  digTarget = null;
+  digProgress = 0;
+  emptyDigCooldown = 0;
+  digSoundCooldown = 0;
+  stopSwipeControl();
+  state = "title";
+  setupTitle();
+}
+
 function setupTitle() {
   stopBgm();
   player = {
@@ -275,6 +287,8 @@ function updateHud() {
   collectedEl.textContent = String(collected);
   dangerEl.textContent = dangerLevel;
   soundButton.textContent = soundEnabled ? "♪" : "×";
+  restartButton.textContent = state === "title" ? "↻" : "⌂";
+  restartButton.setAttribute("aria-label", state === "title" ? "ゲームを始める" : "スタート画面に戻る");
 }
 
 function update(dt) {
@@ -617,7 +631,9 @@ function drawOverlay() {
   ctx.font = "900 54px system-ui, sans-serif";
   ctx.fillText(state === "won" ? "クリア" : "失敗", canvas.width / 2, canvas.height / 2 - 24);
   ctx.font = "700 24px system-ui, sans-serif";
-  ctx.fillText("掘る / ↻ でリスタート", canvas.width / 2, canvas.height / 2 + 28);
+  ctx.fillText("掘る / ↻ でリスタート", canvas.width / 2, canvas.height / 2 + 20);
+  ctx.font = "700 20px system-ui, sans-serif";
+  ctx.fillText("⌂ でスタート画面へ", canvas.width / 2, canvas.height / 2 + 56);
   ctx.textAlign = "start";
 }
 
@@ -805,7 +821,8 @@ soundButton.addEventListener("click", (event) => {
 
 restartButton.addEventListener("click", (event) => {
   event.stopPropagation();
-  resetGame();
+  if (state === "title") resetGame();
+  else returnToTitle();
 });
 digButton.addEventListener("click", () => {
   if (state !== "playing") resetGame();
