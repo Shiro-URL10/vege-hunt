@@ -653,7 +653,7 @@ function drawTitle() {
 }
 
 function controlHintText() {
-  if (isTouchDevice()) return "移動: キャラをスワイプ  掘る: ボタン長押し";
+  if (isTouchDevice()) return "移動: 画面をスワイプ  掘る: ボタン長押し";
   return "移動: 矢印/WASD  掘る: スペース長押し";
 }
 
@@ -750,8 +750,6 @@ function startSwipeControl(event) {
   if (state !== "playing" || !isTouchPointer(event)) return false;
 
   const point = canvasPointFromEvent(event);
-  if (distance(point.x, point.y, player.x, player.y) > 96) return false;
-
   swipeControl = {
     active: true,
     pointerId: event.pointerId,
@@ -781,6 +779,10 @@ function stopSwipeControl(event) {
   };
 }
 
+function blockTouchSelection(event) {
+  if (isTouchPointer(event)) event.preventDefault();
+}
+
 window.addEventListener("keydown", (event) => {
   if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "a", "d", "s", "w"].includes(event.key)) {
     event.preventDefault();
@@ -808,19 +810,27 @@ restartButton.addEventListener("click", (event) => {
 digButton.addEventListener("click", () => {
   if (state !== "playing") resetGame();
 });
-digButton.addEventListener("pointerdown", () => {
+digButton.addEventListener("pointerdown", (event) => {
   if (state === "title") return;
+  event.preventDefault();
   digHeld = true;
 });
-digButton.addEventListener("pointerup", () => {
+digButton.addEventListener("pointerup", (event) => {
+  event.preventDefault();
   digHeld = false;
 });
-digButton.addEventListener("pointerleave", () => {
+digButton.addEventListener("pointerleave", (event) => {
+  event.preventDefault();
   digHeld = false;
 });
-digButton.addEventListener("pointercancel", () => {
+digButton.addEventListener("pointercancel", (event) => {
+  event.preventDefault();
   digHeld = false;
 });
+
+document.addEventListener("contextmenu", blockTouchSelection);
+document.addEventListener("selectstart", blockTouchSelection);
+document.addEventListener("dragstart", blockTouchSelection);
 
 canvas.addEventListener("pointerdown", (event) => {
   startSwipeControl(event);
