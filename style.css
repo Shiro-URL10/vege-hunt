@@ -110,6 +110,7 @@ button:active {
   background: var(--soil);
   box-shadow: 0 12px 0 rgba(75, 45, 30, 0.25);
   image-rendering: pixelated;
+  touch-action: none;
 }
 
 .controls {
@@ -148,5 +149,17 @@ button:active {
 
   .controls {
     display: grid;
+  }
+
+  .move {
+    display: none;
+  }
+
+  .controls div {
+    display: block;
+  }
+
+  #dig {
+    width: 128px;
   }
 }
