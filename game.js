@@ -39,6 +39,12 @@ let bgmTimer = null;
 let bgmStep = 0;
 let soundEnabled = true;
 let digSoundCooldown = 0;
+let swipeControl = {
+  active: false,
+  pointerId: null,
+  targetX: 0,
+  targetY: 0,
+};
 
 const difficultySettings = {
   EASY: { speedScale: 0.78, label: "EASY" },
@@ -179,6 +185,7 @@ function resetGame() {
   digHeld = false;
   emptyDigCooldown = 0;
   digSoundCooldown = 0;
+  stopSwipeControl();
   dangerLevel = "低";
   graceTime = 2.2;
   placeVegetables();
@@ -283,6 +290,13 @@ function update(dt) {
 }
 
 function readMovement() {
+  if (swipeControl.active) {
+    const dx = swipeControl.targetX - player.x;
+    const dy = swipeControl.targetY - player.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 10) return { x: dx / dist, y: dy / dist, moving: true };
+  }
+
   let dx = 0;
   let dy = 0;
   if (keys.has("ArrowLeft") || keys.has("a")) dx -= 1;
@@ -634,8 +648,13 @@ function drawTitle() {
 
   ctx.fillStyle = "#fff8e8";
   ctx.font = "700 20px system-ui, sans-serif";
-  ctx.fillText("移動: 矢印/WASD  掘る: スペース長押し", canvas.width / 2, canvas.height / 2 + 154);
+  ctx.fillText(controlHintText(), canvas.width / 2, canvas.height / 2 + 154);
   ctx.textAlign = "start";
+}
+
+function controlHintText() {
+  if (isTouchDevice()) return "移動: キャラをスワイプ  掘る: ボタン長押し";
+  return "移動: 矢印/WASD  掘る: スペース長押し";
 }
 
 function drawDifficultyButtons() {
@@ -711,6 +730,57 @@ function distance(x1, y1, x2, y2) {
   return Math.hypot(x1 - x2, y1 - y2);
 }
 
+function isTouchDevice() {
+  return window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+}
+
+function isTouchPointer(event) {
+  return event.pointerType === "touch" || event.pointerType === "pen" || isTouchDevice();
+}
+
+function canvasPointFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
+function startSwipeControl(event) {
+  if (state !== "playing" || !isTouchPointer(event)) return false;
+
+  const point = canvasPointFromEvent(event);
+  if (distance(point.x, point.y, player.x, player.y) > 96) return false;
+
+  swipeControl = {
+    active: true,
+    pointerId: event.pointerId,
+    targetX: point.x,
+    targetY: point.y,
+  };
+  canvas.setPointerCapture(event.pointerId);
+  event.preventDefault();
+  return true;
+}
+
+function updateSwipeControl(event) {
+  if (!swipeControl.active || event.pointerId !== swipeControl.pointerId) return;
+  const point = canvasPointFromEvent(event);
+  swipeControl.targetX = point.x;
+  swipeControl.targetY = point.y;
+  event.preventDefault();
+}
+
+function stopSwipeControl(event) {
+  if (event && swipeControl.pointerId !== event.pointerId) return;
+  swipeControl = {
+    active: false,
+    pointerId: null,
+    targetX: 0,
+    targetY: 0,
+  };
+}
+
 window.addEventListener("keydown", (event) => {
   if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "a", "d", "s", "w"].includes(event.key)) {
     event.preventDefault();
@@ -750,6 +820,22 @@ digButton.addEventListener("pointerleave", () => {
 });
 digButton.addEventListener("pointercancel", () => {
   digHeld = false;
+});
+
+canvas.addEventListener("pointerdown", (event) => {
+  startSwipeControl(event);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  updateSwipeControl(event);
+});
+
+canvas.addEventListener("pointerup", (event) => {
+  stopSwipeControl(event);
+});
+
+canvas.addEventListener("pointercancel", (event) => {
+  stopSwipeControl(event);
 });
 
 canvas.addEventListener("click", (event) => {
