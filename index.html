@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>もぐって野菜ハント</title>
-    <link rel="stylesheet" href="style.css?v=20260707-boss-stages" />
+    <link rel="stylesheet" href="style.css?v=20260707-stage-clear" />
   </head>
   <body>
     <main class="game-shell">
@@ -20,6 +20,10 @@
         <div>
           <p class="label">ステージ</p>
           <p><span id="stage">1</span>/5</p>
+        </div>
+        <div class="message-slot">
+          <p class="label">状態</p>
+          <p><span id="message">クリックでスタート</span></p>
         </div>
         <button id="sound" type="button" aria-label="音を切り替える">♪</button>
         <button id="restart" type="button" aria-label="もう一度遊ぶ">↻</button>
@@ -38,6 +42,6 @@
       </section>
     </main>
 
-    <script src="game.js?v=20260707-boss-stages"></script>
+    <script src="game.js?v=20260707-stage-clear"></script>
   </body>
 </html>
