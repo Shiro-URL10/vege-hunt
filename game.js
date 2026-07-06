@@ -4,6 +4,7 @@ const gameShell = document.querySelector(".game-shell");
 const collectedEl = document.querySelector("#collected");
 const totalEl = document.querySelector("#total");
 const dangerEl = document.querySelector("#danger");
+const stageEl = document.querySelector("#stage");
 const soundButton = document.querySelector("#sound");
 const restartButton = document.querySelector("#restart");
 const digButton = document.querySelector("#dig");
@@ -12,16 +13,31 @@ const moveButtons = document.querySelectorAll(".move");
 const cols = 12;
 const rows = 8;
 const tile = 80;
-const totalVegetables = 14;
 const digSeconds = 0.72;
 const characterDigRadius = 58;
+const maxStage = 5;
+const bossStage = 5;
+
+const stageSettings = [
+  { vegetables: 8, enemies: 2, speedScale: 0.82, alertRange: 135, grace: 2.4 },
+  { vegetables: 10, enemies: 2, speedScale: 0.96, alertRange: 150, grace: 2.2 },
+  { vegetables: 12, enemies: 3, speedScale: 1.08, alertRange: 165, grace: 2 },
+  { vegetables: 14, enemies: 3, speedScale: 1.2, alertRange: 180, grace: 1.8 },
+  { vegetables: 0, enemies: 2, speedScale: 1.24, alertRange: 185, grace: 2, bombs: 5, bossHp: 3 },
+];
 
 const keys = new Set();
 let vegetables = [];
 let dirtPuffs = [];
 let enemies = [];
+let bombs = [];
+let bombShots = [];
+let boss = null;
 let player;
 let collected = 0;
+let currentStage = 1;
+let stageGoal = stageSettings[0].vegetables;
+let heldBombs = 0;
 let state = "title";
 let lastTime = 0;
 let message = "";
@@ -163,6 +179,10 @@ function playWinSound() {
   [523, 659, 784, 1046].forEach((note, index) => playTone(note, 0.16, "triangle", 0.24, index * 0.11));
 }
 
+function playStageClearSound() {
+  [440, 554, 659].forEach((note, index) => playTone(note, 0.12, "triangle", 0.22, index * 0.09));
+}
+
 function playLoseSound() {
   [330, 247, 196].forEach((note, index) => playTone(note, 0.16, "sawtooth", 0.2, index * 0.13));
 }
@@ -170,6 +190,13 @@ function playLoseSound() {
 function resetGame() {
   initAudio();
   playStartSound();
+  startBgm();
+  currentStage = 1;
+  startStage(currentStage);
+}
+
+function startStage(stageNumber) {
+  const settings = currentStageSettings();
   startBgm();
   player = {
     x: tile * 1.5,
@@ -179,11 +206,16 @@ function resetGame() {
     facing: { x: 1, y: 0 },
   };
   vegetables = [];
+  bombs = [];
+  bombShots = [];
+  boss = stageNumber === bossStage ? createBoss() : null;
   dirtPuffs = [];
   enemies = createEnemies();
   collected = 0;
+  heldBombs = 0;
+  stageGoal = settings.vegetables;
   state = "playing";
-  message = "敵を避けながら全部掘り出せ";
+  message = stageNumber === bossStage ? "爆弾を掘ってボスに投げろ" : `STAGE ${stageNumber}: 野菜を全部掘り出せ`;
   lastTime = 0;
   digTarget = null;
   digProgress = 0;
@@ -193,8 +225,9 @@ function resetGame() {
   stopSwipeControl();
   stopCharacterDigControl();
   dangerLevel = "低";
-  graceTime = 2.2;
-  placeVegetables();
+  graceTime = settings.grace;
+  if (stageNumber === bossStage) placeBombs();
+  else placeVegetables(settings.vegetables);
   updateHud();
 }
 
@@ -213,6 +246,7 @@ function returnToTitle() {
 
 function setupTitle() {
   stopBgm();
+  currentStage = 1;
   player = {
     x: tile * 1.5,
     y: tile * 4.5,
@@ -227,15 +261,24 @@ function setupTitle() {
     { c: 9, r: 5, type: vegTypes[3], found: false, wiggle: 3.4 },
   ];
   enemies = createEnemies();
+  bombs = [];
+  bombShots = [];
+  boss = null;
   collected = 0;
+  heldBombs = 0;
+  stageGoal = stageSettings[0].vegetables;
   dangerLevel = "低";
   message = "クリックでスタート";
-  totalEl.textContent = String(totalVegetables);
   updateHud();
 }
 
+function currentStageSettings() {
+  return stageSettings[currentStage - 1];
+}
+
 function createEnemies() {
-  return [
+  const settings = currentStageSettings();
+  const enemyTemplates = [
     makeEnemy(10.4, 1.2, 126, [
       [10.4, 1.2],
       [6.8, 1.2],
@@ -255,15 +298,17 @@ function createEnemies() {
       [3.6, 6.4],
     ]),
   ];
+  return enemyTemplates.slice(0, settings.enemies);
 }
 
 function makeEnemy(c, r, speed, path) {
+  const settings = currentStageSettings();
   return {
     x: c * tile,
     y: r * tile,
     radius: 25,
     baseSpeed: speed,
-    speed: speed * difficultySettings[difficulty].speedScale,
+    speed: speed * settings.speedScale * difficultySettings[difficulty].speedScale,
     path: path.map(([pc, pr]) => ({ x: pc * tile, y: pr * tile })),
     targetIndex: 1,
     wobble: Math.random() * Math.PI * 2,
@@ -272,9 +317,24 @@ function makeEnemy(c, r, speed, path) {
   };
 }
 
-function placeVegetables() {
+function createBoss() {
+  return {
+    x: tile * 9.7,
+    y: tile * 3.8,
+    radius: 46,
+    hp: currentStageSettings().bossHp,
+    maxHp: currentStageSettings().bossHp,
+    speed: 92 * difficultySettings[difficulty].speedScale,
+    chargeCooldown: 1.2,
+    stun: 0,
+    facing: { x: -1, y: 0 },
+    wobble: 0,
+  };
+}
+
+function placeVegetables(goal) {
   const reserved = new Set(["1,4", "1,5", "2,4"]);
-  while (vegetables.length < totalVegetables) {
+  while (vegetables.length < goal) {
     const c = Math.floor(Math.random() * cols);
     const r = Math.floor(Math.random() * rows);
     const key = `${c},${r}`;
@@ -287,11 +347,28 @@ function placeVegetables() {
       wiggle: Math.random() * Math.PI * 2,
     });
   }
-  totalEl.textContent = String(totalVegetables);
+}
+
+function placeBombs() {
+  const reserved = new Set(["1,4", "1,5", "2,4", "10,3", "10,4"]);
+  while (bombs.length < currentStageSettings().bombs) {
+    const c = Math.floor(Math.random() * cols);
+    const r = Math.floor(Math.random() * rows);
+    const key = `${c},${r}`;
+    if (reserved.has(key) || bombs.some((bomb) => bomb.c === c && bomb.r === r)) continue;
+    bombs.push({
+      c,
+      r,
+      found: false,
+      wiggle: Math.random() * Math.PI * 2,
+    });
+  }
 }
 
 function updateHud() {
-  collectedEl.textContent = String(collected);
+  stageEl.textContent = String(currentStage);
+  collectedEl.textContent = String(currentStage === bossStage ? heldBombs : collected);
+  totalEl.textContent = String(currentStage === bossStage && boss ? boss.hp : stageGoal);
   dangerEl.textContent = dangerLevel;
   soundButton.textContent = soundEnabled ? "♪" : "×";
   restartButton.textContent = state === "title" ? "↻" : "⌂";
@@ -305,6 +382,8 @@ function update(dt) {
   updatePlayer(movement, dt);
   updateDigging(movement, dt);
   updateEnemies(dt);
+  updateBoss(dt);
+  updateBombShots(dt);
   updatePuffs(dt);
   updateDanger();
   updateHud();
@@ -351,23 +430,26 @@ function updateDigging(movement, dt) {
   const pc = Math.floor(player.x / tile);
   const pr = Math.floor(player.y / tile);
   const veg = vegetables.find((item) => !item.found && item.c === pc && item.r === pr);
+  const bomb = bombs.find((item) => !item.found && item.c === pc && item.r === pr);
 
-  if (!veg) {
+  if (!veg && !bomb) {
+    if (tryThrowBomb()) return;
     digTarget = null;
     digProgress = 0;
     if (emptyDigCooldown <= 0) {
       dirtPuffs.push({ x: pc * tile + tile / 2, y: pr * tile + tile / 2, life: 0.35 });
-      message = "ここは空っぽ";
+      message = heldBombs > 0 && boss ? "ボスに向かって爆弾を投げろ" : "ここは空っぽ";
       emptyDigCooldown = 0.28;
       playEmptyDigSound();
     }
     return;
   }
 
-  if (digTarget !== veg) {
-    digTarget = veg;
+  const target = veg || bomb;
+  if (digTarget !== target) {
+    digTarget = target;
     digProgress = 0;
-    message = "掘り続けろ";
+    message = bomb ? "爆弾だ。掘り出せ" : "掘り続けろ";
   }
 
   digProgress += dt;
@@ -382,7 +464,8 @@ function updateDigging(movement, dt) {
   });
 
   if (digProgress >= digSeconds) {
-    collectVegetable(veg);
+    if (bomb) collectBomb(bomb);
+    else collectVegetable(veg);
   }
 }
 
@@ -394,20 +477,55 @@ function collectVegetable(veg) {
   digTarget = null;
   digProgress = 0;
 
-  if (collected === totalVegetables) {
-    state = "won";
-    message = "全部回収。畑の勝ち";
-    stopBgm();
-    playWinSound();
+  if (collected === stageGoal) {
+    if (currentStage < bossStage) {
+      currentStage += 1;
+      message = `STAGE ${currentStage}へ`;
+      playStageClearSound();
+      startStage(currentStage);
+    } else {
+      winGame();
+    }
   }
+}
+
+function collectBomb(bomb) {
+  bomb.found = true;
+  heldBombs += 1;
+  message = "爆弾を手に入れた";
+  playCollectSound();
+  digTarget = null;
+  digProgress = 0;
+}
+
+function tryThrowBomb() {
+  if (!boss || heldBombs <= 0 || bombShots.length > 0) return false;
+  const dx = boss.x - player.x;
+  const dy = boss.y - player.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  heldBombs -= 1;
+  bombShots.push({
+    x: player.x + player.facing.x * 28,
+    y: player.y + player.facing.y * 28,
+    vx: (dx / dist) * 430,
+    vy: (dy / dist) * 430,
+    life: 1.6,
+  });
+  message = "爆弾を投げた";
+  playTone(180, 0.08, "square", 0.22);
+  digHeld = false;
+  digTarget = null;
+  digProgress = 0;
+  return true;
 }
 
 function updateEnemies(dt) {
   graceTime = Math.max(0, graceTime - dt);
+  const settings = currentStageSettings();
 
   enemies.forEach((enemy) => {
     const toPlayer = distance(enemy.x, enemy.y, player.x, player.y);
-    enemy.alert = toPlayer < 205;
+    enemy.alert = toPlayer < settings.alertRange;
     enemy.wobble += dt * 5.2;
 
     const target = enemy.alert ? player : enemy.path[enemy.targetIndex];
@@ -427,12 +545,88 @@ function updateEnemies(dt) {
     }
 
     if (graceTime <= 0 && distance(player.x, player.y, enemy.x, enemy.y) < player.radius + enemy.radius - 7) {
-      state = "lost";
-      message = "敵に捕まった";
-      stopBgm();
-      playLoseSound();
+      loseGame("敵に捕まった");
     }
   });
+}
+
+function updateBoss(dt) {
+  if (!boss) return;
+  boss.wobble += dt * 5;
+  boss.stun = Math.max(0, boss.stun - dt);
+  if (boss.stun > 0) return;
+
+  const dx = player.x - boss.x;
+  const dy = player.y - boss.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  boss.facing = { x: dx / dist, y: dy / dist };
+  const charge = dist < 260 ? 1.45 : 1;
+  boss.x = clamp(boss.x + boss.facing.x * boss.speed * charge * dt, boss.radius, canvas.width - boss.radius);
+  boss.y = clamp(boss.y + boss.facing.y * boss.speed * charge * dt, boss.radius, canvas.height - boss.radius);
+
+  if (graceTime <= 0 && distance(player.x, player.y, boss.x, boss.y) < player.radius + boss.radius - 8) {
+    loseGame("ボスに吹き飛ばされた");
+  }
+}
+
+function updateBombShots(dt) {
+  if (!boss) {
+    bombShots = [];
+    return;
+  }
+
+  bombShots = bombShots
+    .map((shot) => {
+      const dx = boss.x - shot.x;
+      const dy = boss.y - shot.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      const speed = Math.hypot(shot.vx, shot.vy) || 430;
+      const vx = shot.vx * 0.88 + (dx / dist) * speed * 0.12;
+      const vy = shot.vy * 0.88 + (dy / dist) * speed * 0.12;
+      return {
+        ...shot,
+        vx,
+        vy,
+        x: shot.x + vx * dt,
+        y: shot.y + vy * dt,
+        life: shot.life - dt,
+      };
+    })
+    .filter((shot) => shot.life > 0 && shot.x > -30 && shot.x < canvas.width + 30 && shot.y > -30 && shot.y < canvas.height + 30);
+
+  bombShots.forEach((shot) => {
+    if (!shot.hit && distance(shot.x, shot.y, boss.x, boss.y) < boss.radius + 15) {
+      shot.hit = true;
+      boss.hp -= 1;
+      boss.stun = 0.7;
+      dirtPuffs.push({ x: boss.x, y: boss.y, life: 0.5 });
+      message = `命中。あと${Math.max(0, boss.hp)}発`;
+      playTone(90, 0.18, "sawtooth", 0.26);
+      if (boss.hp <= 0) winGame();
+    }
+  });
+
+  bombShots = bombShots.filter((shot) => !shot.hit);
+}
+
+function loseGame(reason) {
+  if (state !== "playing") return;
+  state = "lost";
+  message = reason;
+  digHeld = false;
+  stopSwipeControl();
+  stopCharacterDigControl();
+  stopBgm();
+  playLoseSound();
+}
+
+function winGame() {
+  state = "won";
+  message = "CLEAR! あなたの畑は守られました";
+  boss = null;
+  bombShots = [];
+  stopBgm();
+  playWinSound();
 }
 
 function updatePuffs(dt) {
@@ -442,7 +636,8 @@ function updatePuffs(dt) {
 }
 
 function updateDanger() {
-  const nearest = enemies.reduce((best, enemy) => Math.min(best, distance(player.x, player.y, enemy.x, enemy.y)), Infinity);
+  let nearest = enemies.reduce((best, enemy) => Math.min(best, distance(player.x, player.y, enemy.x, enemy.y)), Infinity);
+  if (boss) nearest = Math.min(nearest, distance(player.x, player.y, boss.x, boss.y));
   if (nearest < 95) dangerLevel = "危険";
   else if (nearest < 190) dangerLevel = "注意";
   else dangerLevel = "低";
@@ -461,12 +656,16 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawField();
   drawVegetableClues();
+  drawBombClues();
   drawEnemyPaths();
   vegetables.filter((veg) => veg.found).forEach(drawVegetable);
   dirtPuffs.forEach(drawPuff);
   enemies.forEach(drawEnemy);
+  if (boss) drawBoss();
+  bombShots.forEach(drawBombShot);
   drawPlayer();
   drawDigMeter();
+  drawBossMeter();
   drawMessage();
   if (state === "title") drawTitle();
   else if (state !== "playing") drawOverlay();
@@ -513,6 +712,25 @@ function drawVegetableClues() {
     });
 }
 
+function drawBombClues() {
+  bombs
+    .filter((bomb) => !bomb.found)
+    .forEach((bomb) => {
+      const x = bomb.c * tile + tile / 2;
+      const y = bomb.r * tile + tile / 2;
+      const pulse = Math.sin(performance.now() / 280 + bomb.wiggle) * 2;
+      ctx.strokeStyle = "#1f2524";
+      ctx.lineWidth = 4;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(x - 12, y - 12 + pulse);
+      ctx.lineTo(x + 12, y - 18 + pulse);
+      ctx.moveTo(x - 6, y - 4 + pulse);
+      ctx.lineTo(x + 14, y - 8 + pulse);
+      ctx.stroke();
+    });
+}
+
 function drawEnemyPaths() {
   ctx.save();
   ctx.strokeStyle = "rgba(255, 211, 106, 0.18)";
@@ -545,6 +763,24 @@ function drawVegetable(veg) {
   ctx.ellipse(x - 8, y - 18, 7, 15, -0.6, 0, Math.PI * 2);
   ctx.ellipse(x + 8, y - 18, 7, 15, 0.6, 0, Math.PI * 2);
   ctx.fill();
+}
+
+function drawBomb(bomb) {
+  const x = bomb.c * tile + tile / 2;
+  const y = bomb.r * tile + tile / 2 + 6;
+  ctx.fillStyle = "#2a2d30";
+  ctx.beginPath();
+  ctx.arc(x, y, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#101315";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.strokeStyle = "#ffd36a";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(x + 9, y - 15);
+  ctx.quadraticCurveTo(x + 26, y - 27, x + 34, y - 12);
+  ctx.stroke();
 }
 
 function drawPuff(puff) {
@@ -580,6 +816,72 @@ function drawEnemy(enemy) {
   ctx.fill();
   ctx.fillStyle = "#ffd36a";
   ctx.fillRect(enemy.x - 18, y + 15, 36, 7);
+}
+
+function drawBoss() {
+  const y = boss.y + Math.sin(boss.wobble) * 5;
+  const angry = boss.stun <= 0;
+  ctx.fillStyle = angry ? "rgba(154, 45, 35, 0.18)" : "rgba(255, 211, 106, 0.22)";
+  ctx.beginPath();
+  ctx.arc(boss.x, y, angry ? 88 : 70, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#5b3028";
+  ctx.beginPath();
+  ctx.ellipse(boss.x, y, 58, 40, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#2c1715";
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  ctx.fillStyle = "#3a1d1a";
+  ctx.beginPath();
+  ctx.ellipse(boss.x + boss.facing.x * 20, y + 6, 28, 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#f2e4c5";
+  ctx.beginPath();
+  ctx.moveTo(boss.x + boss.facing.x * 30 - 8, y + 12);
+  ctx.lineTo(boss.x + boss.facing.x * 52 - 12, y + 22);
+  ctx.lineTo(boss.x + boss.facing.x * 38 - 2, y + 2);
+  ctx.moveTo(boss.x + boss.facing.x * 30 + 8, y + 12);
+  ctx.lineTo(boss.x + boss.facing.x * 52 + 12, y + 22);
+  ctx.lineTo(boss.x + boss.facing.x * 38 + 2, y + 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#f7f0d7";
+  ctx.beginPath();
+  ctx.arc(boss.x + boss.facing.x * 18 - 13, y - 12, 7, 0, Math.PI * 2);
+  ctx.arc(boss.x + boss.facing.x * 18 + 13, y - 12, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#cf2f2f";
+  ctx.beginPath();
+  ctx.arc(boss.x + boss.facing.x * 20 - 13, y - 12, 3, 0, Math.PI * 2);
+  ctx.arc(boss.x + boss.facing.x * 20 + 13, y - 12, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#2c1715";
+  ctx.beginPath();
+  ctx.moveTo(boss.x - 34, y - 30);
+  ctx.lineTo(boss.x - 16, y - 54);
+  ctx.lineTo(boss.x - 6, y - 29);
+  ctx.moveTo(boss.x + 34, y - 30);
+  ctx.lineTo(boss.x + 16, y - 54);
+  ctx.lineTo(boss.x + 6, y - 29);
+  ctx.fill();
+}
+
+function drawBombShot(shot) {
+  ctx.fillStyle = "#1e2224";
+  ctx.beginPath();
+  ctx.arc(shot.x, shot.y, 14, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#ffd36a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(shot.x + 8, shot.y - 8);
+  ctx.lineTo(shot.x + 20, shot.y - 18);
+  ctx.stroke();
 }
 
 function drawPlayer() {
@@ -619,6 +921,25 @@ function drawDigMeter() {
   ctx.fill();
 }
 
+function drawBossMeter() {
+  if (!boss || state !== "playing") return;
+  const width = 260;
+  const height = 16;
+  const x = canvas.width / 2 - width / 2;
+  const y = 78;
+  ctx.fillStyle = "rgba(38, 49, 38, 0.68)";
+  roundedRect(x, y, width, height, 8);
+  ctx.fill();
+  ctx.fillStyle = "#d94f35";
+  roundedRect(x, y, width * clamp(boss.hp / boss.maxHp, 0, 1), height, 8);
+  ctx.fill();
+  ctx.fillStyle = "#fff8e8";
+  ctx.font = "900 16px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("悪い猪ボス", canvas.width / 2, y - 8);
+  ctx.textAlign = "start";
+}
+
 function drawMessage() {
   ctx.save();
   ctx.fillStyle = "rgba(255, 248, 232, 0.9)";
@@ -635,13 +956,40 @@ function drawOverlay() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#fff8e8";
   ctx.textAlign = "center";
-  ctx.font = "900 54px system-ui, sans-serif";
-  ctx.fillText(state === "won" ? "クリア" : "失敗", canvas.width / 2, canvas.height / 2 - 24);
-  ctx.font = "700 24px system-ui, sans-serif";
-  ctx.fillText("掘る / ↻ でリスタート", canvas.width / 2, canvas.height / 2 + 20);
-  ctx.font = "700 20px system-ui, sans-serif";
-  ctx.fillText("⌂ でスタート画面へ", canvas.width / 2, canvas.height / 2 + 56);
+  if (state === "won") {
+    ctx.font = "900 58px system-ui, sans-serif";
+    ctx.fillText("CLEAR!", canvas.width / 2, canvas.height / 2 - 42);
+    ctx.font = "800 28px system-ui, sans-serif";
+    ctx.fillText("あなたの畑は守られました", canvas.width / 2, canvas.height / 2 + 8);
+    ctx.font = "700 20px system-ui, sans-serif";
+    ctx.fillText("⌂ でスタート画面へ", canvas.width / 2, canvas.height / 2 + 54);
+  } else {
+    ctx.font = "900 54px system-ui, sans-serif";
+    ctx.fillText("失敗", canvas.width / 2, canvas.height / 2 - 86);
+    ctx.font = "700 24px system-ui, sans-serif";
+    ctx.fillText(message, canvas.width / 2, canvas.height / 2 - 42);
+    drawLostChoiceButtons();
+  }
   ctx.textAlign = "start";
+}
+
+function drawLostChoiceButtons() {
+  const buttons = lostChoiceRects();
+  buttons.forEach((button) => {
+    ctx.fillStyle = button.action === "stage" ? "#f47f4d" : "#fff8e8";
+    roundedRect(button.x, button.y, button.w, button.h, 8);
+    ctx.fill();
+    ctx.strokeStyle = "#4b2d1e";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.fillStyle = "#263126";
+    ctx.font = "900 24px system-ui, sans-serif";
+    ctx.fillText(button.label, button.x + button.w / 2, button.y + 38);
+  });
+
+  ctx.fillStyle = "#fff8e8";
+  ctx.font = "700 18px system-ui, sans-serif";
+  ctx.fillText("⌂ でスタート画面へ", canvas.width / 2, canvas.height / 2 + 118);
 }
 
 function drawTitle() {
@@ -723,6 +1071,34 @@ function difficultyAtCanvasPoint(clientX, clientY) {
   });
 }
 
+function lostChoiceRects() {
+  const width = 220;
+  const height = 58;
+  const gap = 22;
+  const y = canvas.height / 2 + 8;
+  const startX = canvas.width / 2 - width - gap / 2;
+  return [
+    { action: "stage", label: "今のステージから", x: startX, y, w: width, h: height },
+    { action: "start", label: "最初から", x: startX + width + gap, y, w: width, h: height },
+  ];
+}
+
+function lostChoiceAtCanvasPoint(clientX, clientY) {
+  const point = canvasPointFromClient(clientX, clientY);
+  const button = lostChoiceRects().find((rect) => {
+    return point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
+  });
+  return button ? button.action : null;
+}
+
+function canvasPointFromClient(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((clientX - rect.left) / rect.width) * canvas.width,
+    y: ((clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
 function roundedRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -762,11 +1138,7 @@ function isTouchPointer(event) {
 }
 
 function canvasPointFromEvent(event) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
-    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
-  };
+  return canvasPointFromClient(event.clientX, event.clientY);
 }
 
 function isPointOnPlayer(point) {
@@ -854,7 +1226,8 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
   }
   if (event.key === " " && state === "title") resetGame();
-  else if (event.key === " " && state !== "playing") resetGame();
+  else if (event.key === " " && state === "lost") startStage(currentStage);
+  else if (event.key === " " && state === "won") returnToTitle();
   else if (event.key === " ") digHeld = true;
   keys.add(event.key);
 });
@@ -875,7 +1248,9 @@ restartButton.addEventListener("click", (event) => {
   else returnToTitle();
 });
 digButton.addEventListener("click", () => {
-  if (state !== "playing") resetGame();
+  if (state === "title") resetGame();
+  else if (state === "lost") startStage(currentStage);
+  else if (state === "won") returnToTitle();
 });
 digButton.addEventListener("pointerdown", (event) => {
   if (state === "title") return;
@@ -921,6 +1296,13 @@ canvas.addEventListener("pointercancel", (event) => {
 });
 
 canvas.addEventListener("click", (event) => {
+  if (state === "lost") {
+    const choice = lostChoiceAtCanvasPoint(event.clientX, event.clientY);
+    if (choice === "stage") startStage(currentStage);
+    else if (choice === "start") resetGame();
+    return;
+  }
+
   if (state !== "title") return;
 
   const selectedDifficulty = difficultyAtCanvasPoint(event.clientX, event.clientY);
