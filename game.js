@@ -5,6 +5,7 @@ const collectedEl = document.querySelector("#collected");
 const totalEl = document.querySelector("#total");
 const dangerEl = document.querySelector("#danger");
 const stageEl = document.querySelector("#stage");
+const messageEl = document.querySelector("#message");
 const soundButton = document.querySelector("#sound");
 const restartButton = document.querySelector("#restart");
 const digButton = document.querySelector("#dig");
@@ -66,6 +67,9 @@ let characterDigControl = {
   active: false,
   pointerId: null,
 };
+let lastHudTouchActivation = 0;
+let stageClearReleaseRequired = false;
+let stageClearUnlockAt = 0;
 
 const difficultySettings = {
   EASY: { speedScale: 0.78, label: "EASY" },
@@ -370,6 +374,7 @@ function updateHud() {
   collectedEl.textContent = String(currentStage === bossStage ? heldBombs : collected);
   totalEl.textContent = String(currentStage === bossStage && boss ? boss.hp : stageGoal);
   dangerEl.textContent = dangerLevel;
+  messageEl.textContent = message;
   soundButton.textContent = soundEnabled ? "♪" : "×";
   restartButton.textContent = state === "title" ? "↻" : "⌂";
   restartButton.setAttribute("aria-label", state === "title" ? "ゲームを始める" : "スタート画面に戻る");
@@ -480,13 +485,41 @@ function collectVegetable(veg) {
   if (collected === stageGoal) {
     if (currentStage < bossStage) {
       currentStage += 1;
-      message = `STAGE ${currentStage}へ`;
-      playStageClearSound();
-      startStage(currentStage);
+      enterStageClear();
     } else {
       winGame();
     }
   }
+}
+
+function enterStageClear() {
+  state = "stageClear";
+  message = "クリア！次のステージへ";
+  digHeld = false;
+  digTarget = null;
+  digProgress = 0;
+  stopSwipeControl();
+  stopCharacterDigControl();
+  stageClearReleaseRequired = true;
+  stageClearUnlockAt = Date.now() + 450;
+  playStageClearSound();
+  updateHud();
+}
+
+function releaseStageClearInput() {
+  if (state !== "stageClear") return;
+  stageClearReleaseRequired = false;
+  stageClearUnlockAt = Date.now() + 250;
+}
+
+function canAdvanceStageClear() {
+  return state === "stageClear" && !stageClearReleaseRequired && Date.now() >= stageClearUnlockAt;
+}
+
+function advanceStageClear() {
+  if (!canAdvanceStageClear()) return false;
+  startStage(currentStage);
+  return true;
 }
 
 function collectBomb(bomb) {
@@ -666,7 +699,6 @@ function draw() {
   drawPlayer();
   drawDigMeter();
   drawBossMeter();
-  drawMessage();
   if (state === "title") drawTitle();
   else if (state !== "playing") drawOverlay();
 }
@@ -940,17 +972,6 @@ function drawBossMeter() {
   ctx.textAlign = "start";
 }
 
-function drawMessage() {
-  ctx.save();
-  ctx.fillStyle = "rgba(255, 248, 232, 0.9)";
-  roundedRect(16, 18, 404, 46, 8);
-  ctx.fill();
-  ctx.fillStyle = "#263126";
-  ctx.font = "700 22px system-ui, sans-serif";
-  ctx.fillText(message, 32, 49);
-  ctx.restore();
-}
-
 function drawOverlay() {
   ctx.fillStyle = "rgba(38, 49, 38, 0.72)";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -963,6 +984,14 @@ function drawOverlay() {
     ctx.fillText("あなたの畑は守られました", canvas.width / 2, canvas.height / 2 + 8);
     ctx.font = "700 20px system-ui, sans-serif";
     ctx.fillText("⌂ でスタート画面へ", canvas.width / 2, canvas.height / 2 + 54);
+  } else if (state === "stageClear") {
+    ctx.font = "900 58px system-ui, sans-serif";
+    ctx.fillText("クリア！", canvas.width / 2, canvas.height / 2 - 54);
+    ctx.font = "800 30px system-ui, sans-serif";
+    ctx.fillText("次のステージへ", canvas.width / 2, canvas.height / 2 - 6);
+    ctx.font = "700 20px system-ui, sans-serif";
+    ctx.fillText(canAdvanceStageClear() ? "クリック / 掘る / スペースで進む" : "いったん指やキーを離して準備", canvas.width / 2, canvas.height / 2 + 44);
+    ctx.fillText(`次は STAGE ${currentStage}`, canvas.width / 2, canvas.height / 2 + 78);
   } else {
     ctx.font = "900 54px system-ui, sans-serif";
     ctx.fillText("失敗", canvas.width / 2, canvas.height / 2 - 86);
@@ -1226,6 +1255,7 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
   }
   if (event.key === " " && state === "title") resetGame();
+  else if (event.key === " " && state === "stageClear") advanceStageClear();
   else if (event.key === " " && state === "lost") startStage(currentStage);
   else if (event.key === " " && state === "won") returnToTitle();
   else if (event.key === " ") digHeld = true;
@@ -1234,21 +1264,63 @@ window.addEventListener("keydown", (event) => {
 
 window.addEventListener("keyup", (event) => {
   if (event.key === " ") digHeld = false;
+  if (event.key === " ") releaseStageClearInput();
   keys.delete(event.key);
 });
 
-soundButton.addEventListener("click", (event) => {
+function activateSoundButton(event) {
   event.stopPropagation();
+  if (event.cancelable) event.preventDefault();
   setSoundEnabled(!soundEnabled);
-});
+}
 
-restartButton.addEventListener("click", (event) => {
+function activateRestartButton(event) {
   event.stopPropagation();
+  if (event.cancelable) event.preventDefault();
   if (state === "title") resetGame();
   else returnToTitle();
+}
+
+function shouldHandlePointerButton(event) {
+  return event.pointerType === "touch" || event.pointerType === "pen";
+}
+
+function rememberHudTouchActivation() {
+  lastHudTouchActivation = Date.now();
+}
+
+function isDuplicateTouchClick() {
+  return Date.now() - lastHudTouchActivation < 500;
+}
+
+soundButton.addEventListener("pointerdown", (event) => {
+  event.stopPropagation();
+});
+soundButton.addEventListener("pointerup", (event) => {
+  if (!shouldHandlePointerButton(event)) return;
+  rememberHudTouchActivation();
+  activateSoundButton(event);
+});
+soundButton.addEventListener("click", (event) => {
+  if (!isDuplicateTouchClick()) activateSoundButton(event);
+  else event.stopPropagation();
+});
+
+restartButton.addEventListener("pointerdown", (event) => {
+  event.stopPropagation();
+});
+restartButton.addEventListener("pointerup", (event) => {
+  if (!shouldHandlePointerButton(event)) return;
+  rememberHudTouchActivation();
+  activateRestartButton(event);
+});
+restartButton.addEventListener("click", (event) => {
+  if (!isDuplicateTouchClick()) activateRestartButton(event);
+  else event.stopPropagation();
 });
 digButton.addEventListener("click", () => {
   if (state === "title") resetGame();
+  else if (state === "stageClear") advanceStageClear();
   else if (state === "lost") startStage(currentStage);
   else if (state === "won") returnToTitle();
 });
@@ -1260,14 +1332,17 @@ digButton.addEventListener("pointerdown", (event) => {
 digButton.addEventListener("pointerup", (event) => {
   event.preventDefault();
   digHeld = false;
+  releaseStageClearInput();
 });
 digButton.addEventListener("pointerleave", (event) => {
   event.preventDefault();
   digHeld = false;
+  releaseStageClearInput();
 });
 digButton.addEventListener("pointercancel", (event) => {
   event.preventDefault();
   digHeld = false;
+  releaseStageClearInput();
 });
 
 document.addEventListener("contextmenu", blockTouchSelection);
@@ -1288,14 +1363,21 @@ canvas.addEventListener("pointermove", (event) => {
 canvas.addEventListener("pointerup", (event) => {
   stopCharacterDigControl(event);
   stopSwipeControl(event);
+  releaseStageClearInput();
 });
 
 canvas.addEventListener("pointercancel", (event) => {
   stopCharacterDigControl(event);
   stopSwipeControl(event);
+  releaseStageClearInput();
 });
 
 canvas.addEventListener("click", (event) => {
+  if (state === "stageClear") {
+    advanceStageClear();
+    return;
+  }
+
   if (state === "lost") {
     const choice = lostChoiceAtCanvasPoint(event.clientX, event.clientY);
     if (choice === "stage") startStage(currentStage);
