@@ -14,6 +14,7 @@ const rows = 8;
 const tile = 80;
 const totalVegetables = 14;
 const digSeconds = 0.72;
+const characterDigRadius = 58;
 
 const keys = new Set();
 let vegetables = [];
@@ -44,6 +45,10 @@ let swipeControl = {
   pointerId: null,
   targetX: 0,
   targetY: 0,
+};
+let characterDigControl = {
+  active: false,
+  pointerId: null,
 };
 
 const difficultySettings = {
@@ -186,6 +191,7 @@ function resetGame() {
   emptyDigCooldown = 0;
   digSoundCooldown = 0;
   stopSwipeControl();
+  stopCharacterDigControl();
   dangerLevel = "低";
   graceTime = 2.2;
   placeVegetables();
@@ -200,6 +206,7 @@ function returnToTitle() {
   emptyDigCooldown = 0;
   digSoundCooldown = 0;
   stopSwipeControl();
+  stopCharacterDigControl();
   state = "title";
   setupTitle();
 }
@@ -669,7 +676,7 @@ function drawTitle() {
 }
 
 function controlHintText() {
-  if (isTouchDevice()) return "移動: 画面をスワイプ  掘る: ボタン長押し";
+  if (isTouchDevice()) return "移動: 画面をスワイプ  掘る: キャラ長押し";
   return "移動: 矢印/WASD  掘る: スペース長押し";
 }
 
@@ -762,6 +769,43 @@ function canvasPointFromEvent(event) {
   };
 }
 
+function isPointOnPlayer(point) {
+  return distance(point.x, point.y, player.x, player.y) <= characterDigRadius;
+}
+
+function startCharacterDigControl(event) {
+  if (state !== "playing" || !isTouchPointer(event)) return false;
+
+  const point = canvasPointFromEvent(event);
+  if (!isPointOnPlayer(point)) return false;
+
+  characterDigControl = {
+    active: true,
+    pointerId: event.pointerId,
+  };
+  stopSwipeControl();
+  digHeld = true;
+  canvas.setPointerCapture(event.pointerId);
+  event.preventDefault();
+  return true;
+}
+
+function updateCharacterDigControl(event) {
+  if (!characterDigControl.active || event.pointerId !== characterDigControl.pointerId) return false;
+  event.preventDefault();
+  return true;
+}
+
+function stopCharacterDigControl(event) {
+  if (event && characterDigControl.pointerId !== event.pointerId) return false;
+  if (characterDigControl.active) digHeld = false;
+  characterDigControl = {
+    active: false,
+    pointerId: null,
+  };
+  return true;
+}
+
 function startSwipeControl(event) {
   if (state !== "playing" || !isTouchPointer(event)) return false;
 
@@ -797,6 +841,12 @@ function stopSwipeControl(event) {
 
 function blockTouchSelection(event) {
   if (isTouchPointer(event)) event.preventDefault();
+}
+
+function clearTouchSelection() {
+  if (!isTouchDevice() || !window.getSelection) return;
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed) selection.removeAllRanges();
 }
 
 window.addEventListener("keydown", (event) => {
@@ -848,20 +898,25 @@ digButton.addEventListener("pointercancel", (event) => {
 document.addEventListener("contextmenu", blockTouchSelection);
 document.addEventListener("selectstart", blockTouchSelection);
 document.addEventListener("dragstart", blockTouchSelection);
+document.addEventListener("selectionchange", clearTouchSelection);
 
 canvas.addEventListener("pointerdown", (event) => {
+  if (startCharacterDigControl(event)) return;
   startSwipeControl(event);
 });
 
 canvas.addEventListener("pointermove", (event) => {
+  if (updateCharacterDigControl(event)) return;
   updateSwipeControl(event);
 });
 
 canvas.addEventListener("pointerup", (event) => {
+  stopCharacterDigControl(event);
   stopSwipeControl(event);
 });
 
 canvas.addEventListener("pointercancel", (event) => {
+  stopCharacterDigControl(event);
   stopSwipeControl(event);
 });
 
