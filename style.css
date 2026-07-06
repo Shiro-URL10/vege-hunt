@@ -11,6 +11,9 @@
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 html,
@@ -118,6 +121,9 @@ button:active {
   box-shadow: 0 12px 0 rgba(75, 45, 30, 0.25);
   image-rendering: pixelated;
   touch-action: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .controls {
@@ -155,20 +161,6 @@ button:active {
   }
 
   .controls {
-    display: grid;
-  }
-
-  .move {
     display: none;
-  }
-
-  .controls div {
-    display: block;
-  }
-
-  #dig {
-    width: 184px;
-    height: 68px;
-    font-size: 24px;
   }
 }
