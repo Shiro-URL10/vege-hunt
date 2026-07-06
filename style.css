@@ -52,7 +52,7 @@ body {
 
 .hud {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto auto;
+  grid-template-columns: 0.8fr 0.8fr 0.8fr minmax(180px, 1.7fr) auto auto;
   align-items: center;
   gap: 10px;
   width: min(100%, 760px);
@@ -68,11 +68,21 @@ body {
   min-width: 0;
 }
 
+.message-slot {
+  overflow: hidden;
+}
+
 .hud p {
   margin: 0;
   font-size: 20px;
   font-weight: 800;
   line-height: 1.1;
+  white-space: nowrap;
+}
+
+.message-slot p:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hud .label {
@@ -153,6 +163,15 @@ button:active {
     height: auto;
     grid-template-rows: auto auto auto;
     align-content: start;
+  }
+
+  .hud {
+    grid-template-columns: 1fr 1fr 1fr auto auto;
+  }
+
+  .message-slot {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   #game {
