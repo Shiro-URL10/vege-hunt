@@ -508,8 +508,9 @@ function enterStageClear() {
 
 function releaseStageClearInput() {
   if (state !== "stageClear") return;
+  if (!stageClearReleaseRequired) return;
   stageClearReleaseRequired = false;
-  stageClearUnlockAt = Date.now() + 250;
+  stageClearUnlockAt = Math.max(stageClearUnlockAt, Date.now() + 250);
 }
 
 function canAdvanceStageClear() {
